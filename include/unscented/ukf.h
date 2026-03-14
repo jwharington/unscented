@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 
 #include <array>
+#include <vector>
 
 namespace unscented
 {
@@ -100,6 +101,15 @@ public:
 
   const SigmaWeights& get_covariance_sigma_weights() const;
 
+  void smooth();
+  void calc_smooth_cross_covariance(const SigmaPoints& filtered_sigma_points);
+
+  const std::vector<STATE>& get_smoothed_states() const;
+
+  const std::vector<N_by_N>& get_smoothed_covariances() const;
+
+  void clear_history();
+
 private:
   void calculate_weights();
 
@@ -142,6 +152,15 @@ private:
   double eta_;
 
   Eigen::LLT<N_by_N> cholesky_;
+
+  // For RTS smoother
+  std::vector<STATE> filtered_states_;
+  std::vector<N_by_N> filtered_covariances_;
+  std::vector<STATE> predicted_states_;
+  std::vector<N_by_N> predicted_covariances_;
+  std::vector<N_by_N> smoothing_cross_covariances_;
+  std::vector<STATE> smoothed_states_;
+  std::vector<N_by_N> smoothed_covariances_;
 };
 
 template <typename MANIFOLD, std::size_t ARRAY_SIZE>

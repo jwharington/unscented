@@ -2,9 +2,9 @@
 #include "unscented/primitives.h"
 #include "unscented/ukf.h"
 
+#include <matplot/matplot.h>
 #include <iostream>
 #include <random>
-#include <matplot/matplot.h>
 
 //////////////////////////////////////////////////////////////////////////////
 // Set up the state
@@ -50,9 +50,9 @@ using Measurement = unscented::Compound<Range, Elevation>;
 
 Measurement measurement_model(const State& state)
 {
-  const auto expected_range = 
+  const auto expected_range =
       std::sqrt(std::pow(state[POSITION], 2) + std::pow(state[ALTITUDE], 2));
-  const auto expected_elevation = 
+  const auto expected_elevation =
       unscented::Angle(std::atan2(state[ALTITUDE], state[POSITION]));
   return {expected_range, expected_elevation};
 }
@@ -161,6 +161,7 @@ int main()
     // Update the filter estimates
     ukf.predict(system_model, DT);
     ukf.correct(measurement_model, meas);
+    ukf.smooth();
 
     const auto& sp = ukf.get_measurement_sigma_points();
     const auto& y_hat = ukf.get_expected_measurement();
@@ -195,6 +196,48 @@ int main()
     sim_time += DT;
   }
 
+  // Get smoothed states
+  const auto& smoothed_states = ukf.get_smoothed_states();
+  const auto& smoothed_covariances = ukf.get_smoothed_covariances();
+
+  // Create vectors for smoothed data
+  std::vector<double> smoothed_positions;
+  std::vector<double> smoothed_velocities;
+  std::vector<double> smoothed_altitudes;
+  std::vector<double> smoothed_climb_rates;
+  std::vector<double> smoothed_position_errors;
+  std::vector<double> smoothed_velocity_errors;
+  std::vector<double> smoothed_altitude_errors;
+  std::vector<double> smoothed_climb_rate_errors;
+  std::vector<double> smoothed_position_std_devs;
+  std::vector<double> smoothed_velocity_std_devs;
+  std::vector<double> smoothed_altitude_std_devs;
+  std::vector<double> smoothed_climb_rate_std_devs;
+
+  for (std::size_t i = 0; i < smoothed_states.size(); ++i)
+  {
+    smoothed_positions.push_back(smoothed_states[i][POSITION]);
+    smoothed_velocities.push_back(smoothed_states[i][VELOCITY]);
+    smoothed_altitudes.push_back(smoothed_states[i][ALTITUDE]);
+    smoothed_climb_rates.push_back(smoothed_states[i][CLIMB_RATE]);
+    smoothed_position_errors.push_back(smoothed_states[i][POSITION] -
+                                       true_positions[i]);
+    smoothed_velocity_errors.push_back(smoothed_states[i][VELOCITY] -
+                                       true_velocities[i]);
+    smoothed_altitude_errors.push_back(smoothed_states[i][ALTITUDE] -
+                                       true_altitudes[i]);
+    smoothed_climb_rate_errors.push_back(smoothed_states[i][CLIMB_RATE] -
+                                         true_climb_rates[i]);
+    smoothed_position_std_devs.push_back(
+        std::sqrt(smoothed_covariances[i](POSITION, POSITION)));
+    smoothed_velocity_std_devs.push_back(
+        std::sqrt(smoothed_covariances[i](VELOCITY, VELOCITY)));
+    smoothed_altitude_std_devs.push_back(
+        std::sqrt(smoothed_covariances[i](ALTITUDE, ALTITUDE)));
+    smoothed_climb_rate_std_devs.push_back(
+        std::sqrt(smoothed_covariances[i](CLIMB_RATE, CLIMB_RATE)));
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Plot the results
   //////////////////////////////////////////////////////////////////////////////
@@ -210,93 +253,128 @@ int main()
   std::vector<double> altitude_negative_n_std_devs(num_pts);
   std::vector<double> climb_rate_positive_n_std_devs(num_pts);
   std::vector<double> climb_rate_negative_n_std_devs(num_pts);
+  std::vector<double> smoothed_position_positive_n_std_devs(num_pts);
+  std::vector<double> smoothed_position_negative_n_std_devs(num_pts);
+  std::vector<double> smoothed_velocity_positive_n_std_devs(num_pts);
+  std::vector<double> smoothed_velocity_negative_n_std_devs(num_pts);
+  std::vector<double> smoothed_altitude_positive_n_std_devs(num_pts);
+  std::vector<double> smoothed_altitude_negative_n_std_devs(num_pts);
+  std::vector<double> smoothed_climb_rate_positive_n_std_devs(num_pts);
+  std::vector<double> smoothed_climb_rate_negative_n_std_devs(num_pts);
   for (std::size_t i = 0; i < num_pts; ++i)
   {
-    position_positive_n_std_devs[i] = num_std_devs * position_std_devs[i];
-    position_negative_n_std_devs[i] = -num_std_devs * position_std_devs[i];
-    velocity_positive_n_std_devs[i] = num_std_devs * velocity_std_devs[i];
-    velocity_negative_n_std_devs[i] = -num_std_devs * velocity_std_devs[i];
-    altitude_positive_n_std_devs[i] = num_std_devs * altitude_std_devs[i];
-    altitude_negative_n_std_devs[i] = -num_std_devs * altitude_std_devs[i];
-    climb_rate_positive_n_std_devs[i] = num_std_devs * climb_rate_std_devs[i];
-    climb_rate_negative_n_std_devs[i] = -num_std_devs * climb_rate_std_devs[i];
+    smoothed_position_positive_n_std_devs[i] =
+        num_std_devs * smoothed_position_std_devs[i];
+    smoothed_position_negative_n_std_devs[i] =
+        -num_std_devs * smoothed_position_std_devs[i];
+    smoothed_velocity_positive_n_std_devs[i] =
+        num_std_devs * smoothed_velocity_std_devs[i];
+    smoothed_velocity_negative_n_std_devs[i] =
+        -num_std_devs * smoothed_velocity_std_devs[i];
+    smoothed_altitude_positive_n_std_devs[i] =
+        num_std_devs * smoothed_altitude_std_devs[i];
+    smoothed_altitude_negative_n_std_devs[i] =
+        -num_std_devs * smoothed_altitude_std_devs[i];
+    smoothed_climb_rate_positive_n_std_devs[i] =
+        num_std_devs * smoothed_climb_rate_std_devs[i];
+    smoothed_climb_rate_negative_n_std_devs[i] =
+        -num_std_devs * smoothed_climb_rate_std_devs[i];
   }
-  
+
   // Position
   matplot::figure();
   matplot::plot(sim_time_history, true_positions, "k");
   matplot::hold(true);
   matplot::plot(sim_time_history, est_positions, "b");
+  matplot::hold(true);
+  matplot::plot(sim_time_history, smoothed_positions, "g");
   matplot::title("Position");
   matplot::xlabel("Time (s)");
   matplot::ylabel("Position (m)");
-  
+
   // Velocity
   matplot::figure();
   matplot::plot(sim_time_history, true_velocities, "k");
   matplot::hold(true);
   matplot::plot(sim_time_history, est_velocities, "b");
+  matplot::hold(true);
+  matplot::plot(sim_time_history, smoothed_velocities, "g");
   matplot::title("Velocity");
   matplot::xlabel("Time (s)");
   matplot::ylabel("Velocities (m/s)");
-  
+
   // Altitude
   matplot::figure();
   matplot::plot(sim_time_history, true_altitudes, "k");
   matplot::hold(true);
   matplot::plot(sim_time_history, est_altitudes, "b");
+  matplot::hold(true);
+  matplot::plot(sim_time_history, smoothed_altitudes, "g");
   matplot::title("Altitude");
   matplot::xlabel("Time (s)");
   matplot::ylabel("Altitude (m)");
-  
+
   // Climb rate
   matplot::figure();
   matplot::plot(sim_time_history, true_climb_rates, "k");
   matplot::hold(true);
   matplot::plot(sim_time_history, est_climb_rates, "b");
+  matplot::hold(true);
+  matplot::plot(sim_time_history, smoothed_climb_rates, "g");
   matplot::title("Climb rate");
   matplot::xlabel("Time (s)");
   matplot::ylabel("Climb rate (m/s)");
 
-  // Position errors
-  matplot::figure();
-  matplot::plot(sim_time_history, position_errors, "b");
-  matplot::hold(true);
-  matplot::plot(sim_time_history, position_positive_n_std_devs, "r--");
-  matplot::plot(sim_time_history, position_negative_n_std_devs, "r--");
-  matplot::title("Position Error");
-  matplot::xlabel("Time (s)");
-  matplot::ylabel("Error (m)");
+  // // Position errors
+  // matplot::figure();
+  // matplot::plot(sim_time_history, position_errors, "b");
+  // matplot::hold(true);
+  // matplot::plot(sim_time_history, position_positive_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, position_negative_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, smoothed_position_errors, "g");
+  // matplot::plot(sim_time_history, smoothed_position_positive_n_std_devs,
+  // "m--"); matplot::plot(sim_time_history,
+  // smoothed_position_negative_n_std_devs, "m--"); matplot::title("Position
+  // Error"); matplot::xlabel("Time (s)"); matplot::ylabel("Error (m)");
 
-  // Velocity errors
-  matplot::figure();
-  matplot::plot(sim_time_history, velocity_errors, "b");
-  matplot::hold(true);
-  matplot::plot(sim_time_history, velocity_positive_n_std_devs, "r--");
-  matplot::plot(sim_time_history, velocity_negative_n_std_devs, "r--");
-  matplot::title("Velocity Error");
-  matplot::xlabel("Time (s)");
-  matplot::ylabel("Error (m/s)");
+  // // Velocity errors
+  // matplot::figure();
+  // matplot::plot(sim_time_history, velocity_errors, "b");
+  // matplot::hold(true);
+  // matplot::plot(sim_time_history, velocity_positive_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, velocity_negative_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, smoothed_velocity_errors, "g");
+  // matplot::plot(sim_time_history, smoothed_velocity_positive_n_std_devs,
+  // "m--"); matplot::plot(sim_time_history,
+  // smoothed_velocity_negative_n_std_devs, "m--"); matplot::title("Velocity
+  // Error"); matplot::xlabel("Time (s)"); matplot::ylabel("Error (m/s)");
 
-  // Altitude errors
-  matplot::figure();
-  matplot::plot(sim_time_history, altitude_errors, "b");
-  matplot::hold(true);
-  matplot::plot(sim_time_history, altitude_positive_n_std_devs, "r--");
-  matplot::plot(sim_time_history, altitude_negative_n_std_devs, "r--");
-  matplot::title("Altitude Error");
-  matplot::xlabel("Time (s)");
-  matplot::ylabel("Error (m)");
+  // // Altitude errors
+  // matplot::figure();
+  // matplot::plot(sim_time_history, altitude_errors, "b");
+  // matplot::hold(true);
+  // matplot::plot(sim_time_history, altitude_positive_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, altitude_negative_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, smoothed_altitude_errors, "g");
+  // matplot::plot(sim_time_history, smoothed_altitude_positive_n_std_devs,
+  // "m--"); matplot::plot(sim_time_history,
+  // smoothed_altitude_negative_n_std_devs, "m--"); matplot::title("Altitude
+  // Error"); matplot::xlabel("Time (s)"); matplot::ylabel("Error (m)");
 
-  // Climb rate errors
-  matplot::figure();
-  matplot::plot(sim_time_history, climb_rate_errors, "b");
-  matplot::hold(true);
-  matplot::plot(sim_time_history, climb_rate_positive_n_std_devs, "r--");
-  matplot::plot(sim_time_history, climb_rate_negative_n_std_devs, "r--");
-  matplot::title("Climb Rate Error");
-  matplot::xlabel("Time (m/s)");
-  matplot::ylabel("Error (m)");
+  // // Climb rate errors
+  // matplot::figure();
+  // matplot::plot(sim_time_history, climb_rate_errors, "b");
+  // matplot::hold(true);
+  // matplot::plot(sim_time_history, climb_rate_positive_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, climb_rate_negative_n_std_devs, "r--");
+  // matplot::plot(sim_time_history, smoothed_climb_rate_errors, "g");
+  // matplot::plot(sim_time_history, smoothed_climb_rate_positive_n_std_devs,
+  //               "m--");
+  // matplot::plot(sim_time_history, smoothed_climb_rate_negative_n_std_devs,
+  //               "m--");
+  // matplot::title("Climb Rate Error");
+  // matplot::xlabel("Time (m/s)");
+  // matplot::ylabel("Error (m)");
 
   matplot::show();
 

@@ -35,7 +35,14 @@ template <typename STATE, typename MEAS>
 template <typename SYS_MODEL, typename... PARAMS>
 void UKF<STATE, MEAS>::predict(const SYS_MODEL& system_model, PARAMS... params)
 {
+  // Store current filtered state and covariance
+  // J filtered_states_.push_back(x_);
+  // J filtered_covariances_.push_back(P_);
+
   generate_sigma_points();
+
+  // Copy filtered sigma points before propagation
+  SigmaPoints filtered_sigma_points = sigma_points_;
 
   // Transform each sigma point through the system model
   for (auto& sigma_point : sigma_points_)
@@ -53,6 +60,28 @@ void UKF<STATE, MEAS>::predict(const SYS_MODEL& system_model, PARAMS... params)
     const N_by_1 diff = sigma_points_[i] - x_;
     P_ += sigma_weights_cov_[i] * (diff * diff.transpose());
   }
+
+  // Store predicted state and covariance
+  predicted_states_.push_back(x_);
+  predicted_covariances_.push_back(P_);
+
+  // J calc_smooth_cross_covariance(filtered_sigma_points);
+}
+
+template <typename STATE, typename MEAS>
+void UKF<STATE, MEAS>::calc_smooth_cross_covariance(
+    const SigmaPoints& filtered_sigma_points)
+{
+  // Calculate cross-covariance for smoothing
+  N_by_N P_xy = N_by_N::Zero();
+  for (std::size_t i = 0; i < NUM_SIGMA_POINTS; ++i)
+  {
+    const N_by_1 diff_filtered =
+        filtered_sigma_points[i] - filtered_states_.back();
+    const N_by_1 diff_predicted = sigma_points_[i] - x_;
+    P_xy += sigma_weights_cov_[i] * diff_filtered * diff_predicted.transpose();
+  }
+  smoothing_cross_covariances_.push_back(P_xy);
 }
 
 template <typename STATE, typename MEAS>
@@ -106,6 +135,11 @@ void UKF<STATE, MEAS>::correct(const MEAS_MODEL& meas_model, PARAMS... params)
     const N_by_1 diff = sigma_points_[i] - x_;
     P_ += sigma_weights_cov_[i] * diff * diff.transpose();
   }
+
+  // Store filtered state and covariance for smoothing
+  filtered_states_.push_back(x_);
+  filtered_covariances_.push_back(P_);
+  calc_smooth_cross_covariance(sigma_points_);
 }
 
 template <typename STATE, typename MEAS>
@@ -305,6 +339,56 @@ const typename UKF<STATE, MEAS>::SigmaWeights&
 UKF<STATE, MEAS>::get_covariance_sigma_weights() const
 {
   return sigma_weights_cov_;
+}
+
+template <typename STATE, typename MEAS>
+void UKF<STATE, MEAS>::smooth()
+{
+  if (filtered_states_.empty())
+    return;
+
+  smoothed_states_ = filtered_states_;
+  smoothed_covariances_ = filtered_covariances_;
+
+  for (int k = static_cast<int>(filtered_states_.size()) - 2; k >= 0; --k)
+  {
+    const N_by_N& P_xy = smoothing_cross_covariances_[k];
+    const N_by_N& P_pred_next = predicted_covariances_[k + 1];
+    N_by_N C = P_xy * P_pred_next.inverse(); // D_k
+
+    // mks
+    smoothed_states_[k] = filtered_states_[k] + C * (smoothed_states_[k + 1] -
+                                                     predicted_states_[k + 1]);
+    // Pks
+    smoothed_covariances_[k] =
+        filtered_covariances_[k] +
+        C * (smoothed_covariances_[k + 1] - P_pred_next) * C.transpose();
+  }
+}
+
+template <typename STATE, typename MEAS>
+const std::vector<STATE>& UKF<STATE, MEAS>::get_smoothed_states() const
+{
+  return smoothed_states_;
+}
+
+template <typename STATE, typename MEAS>
+const std::vector<typename UKF<STATE, MEAS>::N_by_N>&
+UKF<STATE, MEAS>::get_smoothed_covariances() const
+{
+  return smoothed_covariances_;
+}
+
+template <typename STATE, typename MEAS>
+void UKF<STATE, MEAS>::clear_history()
+{
+  filtered_states_.clear();
+  filtered_covariances_.clear();
+  predicted_states_.clear();
+  predicted_covariances_.clear();
+  smoothing_cross_covariances_.clear();
+  smoothed_states_.clear();
+  smoothed_covariances_.clear();
 }
 
 template <typename STATE, typename MEAS>
