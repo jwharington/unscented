@@ -5,6 +5,9 @@
 #include <matplot/matplot.h>
 #include <iostream>
 #include <random>
+#include "DOP853.h"
+
+using namespace tableau::integration;
 
 using Pos = unscented::Scalar;
 using Vel = unscented::Scalar;
@@ -27,7 +30,9 @@ enum StateElements
 using State =
     unscented::Compound<unscented::Vector<6>, unscented::UnitQuaternion>;
 
-using DerivState = unscented::Vector<10>;
+using DerivState = std::vector<double>;
+
+using Measurement = unscented::Compound<Pos, Pos, Pos, Vel>;
 
 using Vec3 = std::tuple<double, double, double>;
 
@@ -61,17 +66,15 @@ struct GliderAero
 
 GliderAero parms;
 
-DerivState system_ode(const State& state)
+DerivState system_ode(const DerivState& state)
 {
-  auto& [states, attitude] = state.data;
-  auto& u = states[VEL_U];
-  auto& w = states[VEL_W];
-  auto& q = states[AVEL_Q];
-  auto& quaternion = attitude.get_q().coeffs();
-  auto& q0 = quaternion[0];
-  auto& q1 = quaternion[1];
-  auto& q2 = quaternion[2];
-  auto& q3 = quaternion[3];
+  auto& u = state[VEL_U];
+  auto& w = state[VEL_W];
+  auto& q = state[AVEL_Q];
+  auto& q0 = state[QUATERNION + 0];
+  auto& q1 = state[QUATERNION + 1];
+  auto& q2 = state[QUATERNION + 2];
+  auto& q3 = state[QUATERNION + 3];
 
   auto V_sq = u * u + w * w;
   auto V = sqrt(V_sq);
@@ -107,7 +110,7 @@ DerivState system_ode(const State& state)
   const Vec3 pos_dot = Vec3(a1 * u + c1 * w, a2 * u + c2 * w, a3 * u + c3 * w);
 
   auto p = 0.0;
-  auto qdot = 0;
+  const auto qdot = 0;
   // vdot = -r * u + g * b3
   auto r = parms.g * b3 / u;
 
@@ -122,46 +125,77 @@ DerivState system_ode(const State& state)
   auto q2dot = 0.5 * (q0 * q - q1 * r + q3 * p) + lam * q2;
   auto q3dot = 0.5 * (q0 * r + q1 * q - q2 * p) + lam * q3;
 
-  DerivState dstates;
-  dstates[POS_X] = std::get<0>(pos_dot);
-  dstates[POS_Y] = std::get<1>(pos_dot);
-  dstates[POS_Z] = std::get<2>(pos_dot);
-  dstates[VEL_U] = udot;
-  dstates[VEL_W] = wdot;
-  dstates[AVEL_Q] = qdot;
-  dstates[QUATERNION] = q0dot;
-  dstates[QUATERNION + 1] = q1dot;
-  dstates[QUATERNION + 2] = q2dot;
-  dstates[QUATERNION + 3] = q3dot;
+  DerivState dstates = {std::get<0>(pos_dot),
+                        std::get<1>(pos_dot),
+                        std::get<2>(pos_dot),
+                        udot,
+                        wdot,
+                        qdot,
+                        q0dot,
+                        q1dot,
+                        q2dot,
+                        q3dot};
   return dstates;
   // theta = sympy.asin(-a3 / qmag);
   // psi = sympy.acos(a1 / qmag / sympy.cos(theta)) * sympy.sign(a2);
   // phi = sympy.acos(c3 / qmag / sympy.cos(theta)) * sympy.sign(b3);
 }
 
-void system_model(State& state, double dt)
+DerivState convert_state(const State& state)
 {
-  DerivState deriv = system_ode(state);
-  auto& [states, attitude] = state.data;
+  auto& [y, quaternion] = state.data;
+  DerivState vstate;
   for (int i = 0; i < 6; ++i)
   {
-    states[i] += dt * deriv[i];
+    vstate.push_back(y[i]);
   }
-  auto& quaternion = attitude.get_q().coeffs();
-  double qs[4];
-  for (int i = 0; i < 4; ++i)
+  auto& q = quaternion.get_q();
+  vstate.push_back(q.w());
+  vstate.push_back(q.x());
+  vstate.push_back(q.y());
+  vstate.push_back(q.z());
+  return vstate;
+}
+
+void set_state(State& state, const DerivState& vstate)
+{
+  auto& [y, quaternion] = state.data;
+  for (int i = 0; i < 6; ++i)
   {
-    qs[i] = quaternion[i] + dt * deriv[6 + i];
+    y[i] = vstate[i];
   }
-  attitude =
-      unscented::UnitQuaternion(Eigen::Quaterniond(qs[0], qs[1], qs[2], qs[3]));
+  quaternion = unscented::UnitQuaternion(
+      Eigen::Quaterniond(vstate[QUATERNION + 0], vstate[QUATERNION + 1],
+                         vstate[QUATERNION + 2], vstate[QUATERNION + 3]));
+}
+
+void write(const DerivState& x)
+{
+  for (int i = 0; i < 10; ++i)
+  {
+    std::cout << x[i] << ", ";
+  }
+  std::cout << std::endl;
+}
+
+void system_model(State& state, double dt)
+{
+  double t0 = 0.0;
+  DerivState y0 = convert_state(state);
+  DerivState dy0 = system_ode(y0);
+  write(y0);
+
+  DOP853Config<DerivState> cfg;
+  cfg.derivative = [](const DerivState& y, double) { return system_ode(y); };
+  DOP853Integrator<DerivState> integrator(cfg);
+  auto result = integrator.integrate(t0, y0, dt,
+                                     DOP853Tolerance::scalar(1.0e-12, 1.0e-12));
+  set_state(state, result.y);
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // Set up the measurement
 //////////////////////////////////////////////////////////////////////////////
-
-using Measurement = unscented::Compound<Pos, Pos, Pos, Vel>;
 
 //////////////////////////////////////////////////////////////////////////////
 // Set up the measurement model
@@ -179,4 +213,37 @@ Measurement measurement_model(const State& state)
 
 int main()
 {
+  // Initialize the UKF and set the weights
+  using UKF = unscented::UKF<State, Measurement>;
+  UKF ukf;
+  ukf.set_weight_coefficients(0.1, 2.0, -1.0);
+
+  // Simulation parameters
+  const auto DT = 1.0; // seconds
+
+  UKF::N_by_N Q;
+  Q.diagonal() << 1.0, 1.0, 1.0, 1.0, 1.0, 0.01, 0.01, 0.01, 0.01;
+  ukf.set_process_covariance(Q);
+
+  UKF::M_by_M R;
+  R.diagonal() << 4.0, 4.0, 4.0, 1.0;
+  ukf.set_measurement_covariance(R);
+
+  // Set initial state estimate and its covariance
+  State true_state({0, 0, 0, 20, 0, 0}, unscented::UnitQuaternion());
+  //   State initial_state_estimate(0, 90, 1100, 0);
+  State initial_state_estimate({0, 0, 0, 20, 0, 0},
+                               unscented::UnitQuaternion());
+  ukf.set_state(initial_state_estimate);
+  UKF::N_by_N P;
+  P.diagonal() << 10.0, 10.0, 10.0, 1.0, 1.0, 0.1, 1.0, 1.0, 1.0;
+  ukf.set_state_covariance(P);
+
+  double t = 0.0;
+
+  while (t < 200.0)
+  {
+    system_model(true_state, DT);
+    t += DT;
+  }
 }

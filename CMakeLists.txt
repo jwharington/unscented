@@ -30,6 +30,7 @@ target_compile_definitions(unscented INTERFACE
 
 # Glider reconstruction
 add_executable(glider_reconstruction examples/glider_reconstruction.cpp)
+target_include_directories(glider_reconstruction PUBLIC /home/jmw/XCSoar/Tableau/include)
 target_link_libraries(glider_reconstruction PUBLIC unscented matplot)
 
 # Airplane tracking example
