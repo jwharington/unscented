@@ -146,7 +146,7 @@ DerivState system_ode(const DerivState& state)
   // phi = sympy.acos(c3 / qmag / sympy.cos(theta)) * sympy.sign(b3);
 }
 
-DerivState convert_state(const State& state)
+const DerivState convert_state(const State& state)
 {
   auto& [y, quaternion] = state.data;
   DerivState vstate;
@@ -162,6 +162,49 @@ DerivState convert_state(const State& state)
   return vstate;
 }
 
+template <typename T>
+int sign(T val)
+{
+  return (T(0) < val) - (val < T(0));
+}
+
+const Eigen::Vector3d get_euler(const State& state)
+{
+  auto& [y, quaternion] = state.data;
+
+  // 2. Convert the quaternion to a rotation matrix
+  auto& q = quaternion.get_q();
+  // Eigen::Matrix3d rotation_matrix = q.toRotationMatrix();
+  // 3. Extract Euler angles from the rotation matrix
+  // The eulerAngles() method takes the axis sequence as arguments.
+  // Common sequences are ZYX (yaw, pitch, roll) or XYZ.
+  // The arguments are indices of the axes: X=0, Y=1, Z=2.
+  // Here, we use the ZYX order, which is common in aerospace (yaw, pitch,
+  // roll).
+  // return rotation_matrix.eulerAngles(2, 1, 0);
+  // Order: Z, Y, X
+
+  auto q0 = q.w();
+  auto q1 = q.x();
+  auto q2 = q.y();
+  auto q3 = q.z();
+
+  auto a1 = q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3;
+  auto a2 = 2 * (q1 * q2 + q0 * q3);
+  auto a3 = 2 * (q1 * q3 - q0 * q2);
+  auto b3 = 2 * (q2 * q3 + q0 * q1);
+  auto c3 = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+
+  // a1, a2, a3
+  // b3, c3
+
+  double theta = asin(-a3);
+  double psi = acos(a1 / cos(theta)) * sign(a2);
+  double phi = acos(c3 / cos(theta)) * sign(b3);
+  return Eigen::Vector3d(phi, theta, psi);
+  //  * 180.0f / M_PI;
+}
+
 void set_state(State& state, const DerivState& vstate)
 {
   auto& [y, quaternion] = state.data;
@@ -174,11 +217,17 @@ void set_state(State& state, const DerivState& vstate)
                          vstate[QUATERNION + 2], vstate[QUATERNION + 3]));
 }
 
-void write(const DerivState& x)
+void write(const State& state)
 {
-  for (int i = 0; i < 10; ++i)
+  auto& x = convert_state(state);
+  for (int i = 0; i < 6; ++i)
   {
     std::cout << x[i] << ", ";
+  }
+  auto& euler = get_euler(state);
+  for (int i = 0; i < 3; ++i)
+  {
+    std::cout << euler[i] << ", ";
   }
   std::cout << std::endl;
 }
@@ -319,6 +368,6 @@ int main()
     ukf.smooth();
     t += DT;
     const auto& est_state = ukf.get_state();
-    write(convert_state(est_state));
+    write(est_state);
   }
 }
