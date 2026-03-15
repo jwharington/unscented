@@ -29,9 +29,12 @@ target_compile_definitions(unscented INTERFACE
   )
 
 # Glider reconstruction
+set(INTERPROCEDURAL_OPTIMIZATION ON)
+find_package(Boost 1.75 REQUIRED COMPONENTS json)
+
 add_executable(glider_reconstruction examples/glider_reconstruction.cpp)
 target_include_directories(glider_reconstruction PUBLIC /home/jmw/XCSoar/Tableau/include)
-target_link_libraries(glider_reconstruction PUBLIC unscented matplot)
+target_link_libraries(glider_reconstruction PUBLIC unscented matplot Boost::json)
 
 # Airplane tracking example
 add_executable(airplane_tracking examples/airplane_tracking.cpp)

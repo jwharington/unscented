@@ -9,6 +9,11 @@
 
 using namespace tableau::integration;
 
+#include <boost/json.hpp>
+#include <fstream>
+#include <string>
+namespace json = boost::json;
+
 using Pos = unscented::Scalar;
 using Vel = unscented::Scalar;
 
@@ -183,14 +188,71 @@ void system_model(State& state, double dt)
   double t0 = 0.0;
   DerivState y0 = convert_state(state);
   DerivState dy0 = system_ode(y0);
-  write(y0);
 
   DOP853Config<DerivState> cfg;
   cfg.derivative = [](const DerivState& y, double) { return system_ode(y); };
   DOP853Integrator<DerivState> integrator(cfg);
   auto result = integrator.integrate(t0, y0, dt,
                                      DOP853Tolerance::scalar(1.0e-12, 1.0e-12));
+  if (result.y[VEL_U] < 1.0)
+  {
+    result.y[VEL_U] = 1.0;
+  }
   set_state(state, result.y);
+}
+
+/// @brief /////////////////////////////////////////////////////////
+
+// Utility function to read file content into a string
+std::string read_file(const char* filename)
+{
+  std::ifstream is(filename);
+  if (!is)
+  {
+    throw std::runtime_error(std::string("Cannot open file: ") + filename);
+  }
+  std::string s;
+  is.seekg(0, std::ios::end);
+  s.resize(is.tellg());
+  is.seekg(0, std::ios::beg);
+  is.read(&s[0], s.size());
+  return s;
+}
+
+std::vector<Measurement> load_encounter()
+{
+  std::vector<Measurement> measurements;
+  try
+  {
+    // Read the file into a string
+    auto const json_data = read_file(
+        "/home/jmw/Desktop/Projects/FlightReconstruction/encounter_00000.json");
+
+    // Parse the JSON string into a value
+    json::value jv = json::parse(json_data);
+    auto trace = jv.get_object().at("aircraft").at(0).at("trace").as_array();
+    bool first = true;
+    for (auto& line : trace)
+    {
+      Measurement measurement;
+      auto& [y, x, z, U] = measurement.data;
+      x.value = line.at("x").as_double();
+      y.value = line.at("y").as_double();
+      z.value = -line.at("alt_gps").as_double();
+      U.value = line.at("v_tas").as_double();
+      if (!first)
+      {
+        measurements.push_back(measurement);
+      }
+      first = false;
+    }
+  }
+  catch (std::exception const& e)
+  {
+    std::cerr << "Caught exception: " << e.what() << std::endl;
+  }
+  // json::value jv = json::parse(json_data);
+  return measurements;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -229,10 +291,11 @@ int main()
   R.diagonal() << 4.0, 4.0, 4.0, 1.0;
   ukf.set_measurement_covariance(R);
 
+  std::vector<Measurement> measurements = load_encounter();
+  auto& [x, y, z, U] = measurements[0].data;
+
   // Set initial state estimate and its covariance
-  State true_state({0, 0, 0, 20, 0, 0}, unscented::UnitQuaternion());
-  //   State initial_state_estimate(0, 90, 1100, 0);
-  State initial_state_estimate({0, 0, 0, 20, 0, 0},
+  State initial_state_estimate({x.value, y.value, z.value, U.value, 0.0, 0.0},
                                unscented::UnitQuaternion());
   ukf.set_state(initial_state_estimate);
   UKF::N_by_N P;
@@ -241,9 +304,21 @@ int main()
 
   double t = 0.0;
 
-  while (t < 200.0)
+  for (auto& meas : measurements)
   {
-    system_model(true_state, DT);
+    // system_model(true_state, DT);
+    // auto meas = measurement_model(true_state);
+    // auto& [range, elevation] = meas.data;
+    // range.value += range_noise(gen);
+    // elevation = unscented::Angle(elevation.get_angle() +
+    // elevation_noise(gen));
+
+    // Update the filter estimates
+    ukf.predict(system_model, DT);
+    ukf.correct(measurement_model, meas);
+    ukf.smooth();
     t += DT;
+    const auto& est_state = ukf.get_state();
+    write(convert_state(est_state));
   }
 }
