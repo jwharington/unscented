@@ -1,6 +1,7 @@
 #ifndef UNSCENTED_PRIMITIVES_HPP
 #define UNSCENTED_PRIMITIVES_HPP
 
+#include <Eigen/Geometry>
 #include <utility>
 #include "unscented/primitives.h"
 
@@ -150,6 +151,54 @@ Vector<Angle::DOF> operator-(const Angle& lhs, const Angle& rhs)
 {
   return Angle(lhs.get_angle() - rhs.get_angle()).get_vector();
 }
+
+namespace detail
+{
+inline Eigen::Quaterniond quaternion_exp(const Vector<UnitQuaternion::DOF>& vec)
+{
+  const double theta = vec.norm();
+  if (theta < 1e-12)
+  {
+    return Eigen::Quaterniond::Identity();
+  }
+  const Eigen::Vector3d axis = vec / theta;
+  return Eigen::Quaterniond(Eigen::AngleAxisd(theta, axis));
+}
+
+inline Vector<UnitQuaternion::DOF> quaternion_log(const Eigen::Quaterniond& q)
+{
+  const Eigen::Quaterniond qq = q.normalized();
+  const double w = qq.w();
+  const Eigen::Vector3d v(qq.x(), qq.y(), qq.z());
+  const double v_norm = v.norm();
+  if (v_norm < 1e-12 || std::abs(w) > 1.0 - 1e-12)
+  {
+    return Vector<UnitQuaternion::DOF>::Zero();
+  }
+
+  const double angle = 2.0 * std::atan2(v_norm, w);
+  return Vector<UnitQuaternion::DOF>(v * (angle / v_norm));
+}
+} // namespace detail
+
+UnitQuaternion::UnitQuaternion(const Vector<UnitQuaternion::DOF>& vec)
+  : q(detail::quaternion_exp(vec))
+{
+}
+
+UnitQuaternion operator+(const UnitQuaternion& lhs,
+                         const Vector<UnitQuaternion::DOF>& vec)
+{
+  const auto delta_q = detail::quaternion_exp(vec);
+  return UnitQuaternion(delta_q * lhs.get_q());
+}
+
+Vector<UnitQuaternion::DOF> operator-(const UnitQuaternion& lhs,
+                                      const UnitQuaternion& rhs)
+{
+  return detail::quaternion_log(lhs.get_q() * rhs.get_q().inverse());
+}
+
 } // namespace unscented
 
 #endif

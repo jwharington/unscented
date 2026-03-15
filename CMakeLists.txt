@@ -28,6 +28,10 @@ target_compile_definitions(unscented INTERFACE
   EIGEN_INITIALIZE_MATRICES_BY_ZERO=1
   )
 
+# Glider reconstruction
+add_executable(glider_reconstruction examples/glider_reconstruction.cpp)
+target_link_libraries(glider_reconstruction PUBLIC unscented matplot)
+
 # Airplane tracking example
 add_executable(airplane_tracking examples/airplane_tracking.cpp)
 target_link_libraries(airplane_tracking PUBLIC unscented matplot)

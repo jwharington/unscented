@@ -58,8 +58,12 @@ struct Compound
   static constexpr std::size_t TupleSize = std::tuple_size_v<Tuple>;
   static constexpr std::size_t DOF = detail::total_dof<Tuple>();
   Compound() = default;
-  Compound(const Ts&... args) : data(std::make_tuple(args...)) {}
-  Compound(Ts&&... args) : data(std::make_tuple(args...)) {}
+  Compound(const Ts&... args) : data(std::make_tuple(args...))
+  {
+  }
+  Compound(Ts&&... args) : data(std::make_tuple(args...))
+  {
+  }
   Tuple data;
 };
 
@@ -113,9 +117,14 @@ public:
 
   explicit UnitQuaternion(const Vector<DOF>& vec);
 
-  explicit UnitQuaternion(const Eigen::Quaterniond& q);
+  explicit UnitQuaternion(const Eigen::Quaterniond& _q) : q(_q) {};
 
-  UnitQuaternion(double w, double x, double y, double z);
+  // UnitQuaternion(double w, double x, double y, double z);
+
+  const Eigen::Quaterniond& get_q() const
+  {
+    return q;
+  };
 
 private:
   Eigen::Quaterniond q{Eigen::Quaterniond::Identity()};
