@@ -69,7 +69,7 @@ struct GliderAero
  'k': 0.00769772063821893, 'CD0': 0.0107362467389172, 'CL0': 0.5248831739026187}
 */
 
-GliderAero parms;
+const GliderAero parms;
 
 DerivState system_ode(const DerivState& state)
 {
@@ -81,9 +81,9 @@ DerivState system_ode(const DerivState& state)
   auto& q2 = state[QUATERNION + 2];
   auto& q3 = state[QUATERNION + 3];
 
-  auto V_sq = u * u + w * w;
-  auto V = sqrt(V_sq);
-  auto alpha = atan(w / u);
+  const auto V_sq = u * u + w * w;
+  const auto V = sqrt(V_sq);
+  const auto alpha = atan(w / u);
 
   auto CL = parms.dcldalpha * alpha + parms.CL0;
   // CL = sympy.Min(1.5, sympy.Max(0.0, cl_raw))
@@ -91,37 +91,26 @@ DerivState system_ode(const DerivState& state)
   // CLL = sympy.Min(CL, 1.0)
   auto CLL = CL;
 
-  auto Q = 0.5 * parms.rho * V_sq;
-  auto QS_m = Q * parms.S / parms.m;
-  auto sa = w / V; // sin(alpha)
-  auto ca = u / V; // cos(alpha)
-  auto Cx = CLL * sa - CD * ca;
-  auto Cz = -CLL * ca - CD * sa;
+  const auto Q = 0.5 * parms.rho * V_sq;
+  const auto QS_m = Q * parms.S / parms.m;
+  const auto sa = w / V; // sin(alpha)
+  const auto ca = u / V; // cos(alpha)
+  const auto Cx = CLL * sa - CD * ca;
+  const auto Cz = -CLL * ca - CD * sa;
 
   // orientation
-  auto a1 = q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3;
-  auto b1 = 2 * (q1 * q2 - q0 * q3);
-  auto c1 = 2 * (q0 * q2 + q1 * q3);
+  const Eigen::Matrix3d R =
+      Eigen::Quaterniond(q0, q1, q2, q3).toRotationMatrix();
+  const Eigen::Vector3d U(u, 0, w);
+  const Eigen::Vector3d pos_dot = R * U;
 
-  auto a2 = 2 * (q1 * q2 + q0 * q3);
-  auto b2 = q0 * q0 - q1 * q1 + q2 * q2 - q3 * q3;
-  auto c2 = 2 * (q2 * q3 - q0 * q1);
-
-  auto a3 = 2 * (q1 * q3 - q0 * q2);
-  auto b3 = 2 * (q2 * q3 + q0 * q1);
-  auto c3 = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
-
-  // auto pos_dot = body_to_earth(u, w, a1, c1, a2, c2, a3, c3);
-  const Vec3 pos_dot = Vec3(a1 * u + c1 * w, a2 * u + c2 * w, a3 * u + c3 * w);
-
-  auto p = 0.0;
+  const auto p = 0.0;
   const auto qdot = 0;
-  // vdot = -r * u + g * b3
-  auto r = parms.g * b3 / u;
+  // vdot = -r * u + g * b3 = 0
+  const auto r = parms.g * R(2, 1) / u;
 
-  auto udot = -q * w + a3 * parms.g + QS_m * Cx;
-  auto wdot = q * u + c3 * parms.g + QS_m * Cz;
-  // auto vel_dot = body_to_earth(udot, wdot);
+  auto udot = -q * w + R(2, 0) * parms.g + QS_m * Cx;
+  auto wdot = q * u + R(2, 2) * parms.g + QS_m * Cz;
 
   auto qmag = q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3;
   auto lam = 1 - qmag;
@@ -130,20 +119,8 @@ DerivState system_ode(const DerivState& state)
   auto q2dot = 0.5 * (q0 * q - q1 * r + q3 * p) + lam * q2;
   auto q3dot = 0.5 * (q0 * r + q1 * q - q2 * p) + lam * q3;
 
-  DerivState dstates = {std::get<0>(pos_dot),
-                        std::get<1>(pos_dot),
-                        std::get<2>(pos_dot),
-                        udot,
-                        wdot,
-                        qdot,
-                        q0dot,
-                        q1dot,
-                        q2dot,
-                        q3dot};
-  return dstates;
-  // theta = sympy.asin(-a3 / qmag);
-  // psi = sympy.acos(a1 / qmag / sympy.cos(theta)) * sympy.sign(a2);
-  // phi = sympy.acos(c3 / qmag / sympy.cos(theta)) * sympy.sign(b3);
+  return DerivState({pos_dot(0), pos_dot(1), pos_dot(2), udot, wdot, qdot,
+                     q0dot, q1dot, q2dot, q3dot});
 }
 
 const DerivState convert_state(const State& state)
@@ -171,36 +148,10 @@ int sign(T val)
 const Eigen::Vector3d get_euler(const State& state)
 {
   auto& [y, quaternion] = state.data;
-
-  // 2. Convert the quaternion to a rotation matrix
-  auto& q = quaternion.get_q();
-  // Eigen::Matrix3d rotation_matrix = q.toRotationMatrix();
-  // 3. Extract Euler angles from the rotation matrix
-  // The eulerAngles() method takes the axis sequence as arguments.
-  // Common sequences are ZYX (yaw, pitch, roll) or XYZ.
-  // The arguments are indices of the axes: X=0, Y=1, Z=2.
-  // Here, we use the ZYX order, which is common in aerospace (yaw, pitch,
-  // roll).
-  // return rotation_matrix.eulerAngles(2, 1, 0);
-  // Order: Z, Y, X
-
-  auto q0 = q.w();
-  auto q1 = q.x();
-  auto q2 = q.y();
-  auto q3 = q.z();
-
-  auto a1 = q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3;
-  auto a2 = 2 * (q1 * q2 + q0 * q3);
-  auto a3 = 2 * (q1 * q3 - q0 * q2);
-  auto b3 = 2 * (q2 * q3 + q0 * q1);
-  auto c3 = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
-
-  // a1, a2, a3
-  // b3, c3
-
-  double theta = asin(-a3);
-  double psi = acos(a1 / cos(theta)) * sign(a2);
-  double phi = acos(c3 / cos(theta)) * sign(b3);
+  const Eigen::Matrix3d R = quaternion.get_q().toRotationMatrix();
+  double theta = asin(-R(2, 0));
+  double psi = acos(R(0, 0) / cos(theta)) * sign(R(1, 0));
+  double phi = acos(R(2, 2) / cos(theta)) * sign(R(2, 1));
   return Eigen::Vector3d(phi, theta, psi);
   //  * 180.0f / M_PI;
 }
@@ -268,7 +219,19 @@ std::string read_file(const char* filename)
   return s;
 }
 
-std::vector<Measurement> load_encounter()
+State get_initial_state_estimate(const double x, const double y, const double z,
+                                 const double U, const double hdg,
+                                 const double pitch, const double bank)
+{
+  Eigen::Quaterniond init_quaternion =
+      Eigen::AngleAxisd(hdg, Eigen::Vector3d::UnitZ()) *
+      Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+      Eigen::AngleAxisd(bank, Eigen::Vector3d::UnitX());
+  return State({x, y, z, U, 0.0, 0.0},
+               unscented::UnitQuaternion(init_quaternion));
+}
+
+std::vector<Measurement> load_encounter(State& initial_state_estimate)
 {
   std::vector<Measurement> measurements;
   try
@@ -280,20 +243,29 @@ std::vector<Measurement> load_encounter()
     // Parse the JSON string into a value
     json::value jv = json::parse(json_data);
     auto trace = jv.get_object().at("aircraft").at(0).at("trace").as_array();
-    bool first = true;
+    int count = 0;
     for (auto& line : trace)
     {
-      Measurement measurement;
-      auto& [y, x, z, U] = measurement.data;
-      x.value = line.at("x").as_double();
-      y.value = line.at("y").as_double();
-      z.value = -line.at("alt_gps").as_double();
-      U.value = line.at("v_tas").as_double();
-      if (!first)
+      if (count == 2)
       {
+        auto& [x, y, z, U] = measurements[0].data;
+        const double hdg = line.at("hdg").as_double() * M_PI / 180.0;
+        const double pitch = line.at("pitch").as_double() * M_PI / 180.0;
+        const double bank = line.at("bank").as_double() * M_PI / 180.0;
+        initial_state_estimate = get_initial_state_estimate(
+            x.value, y.value, z.value, U.value, hdg, pitch, bank);
+      }
+      if (count > 0)
+      {
+        Measurement measurement;
+        auto& [y, x, z, U] = measurement.data;
+        x.value = line.at("x").as_double();
+        y.value = line.at("y").as_double();
+        z.value = -line.at("alt_gps").as_double();
+        U.value = line.at("v_tas").as_double();
         measurements.push_back(measurement);
       }
-      first = false;
+      count++;
     }
   }
   catch (std::exception const& e)
@@ -322,15 +294,12 @@ Measurement measurement_model(const State& state)
   return {states[POS_X], states[POS_Y], states[POS_Z], V};
 }
 
-int main()
+using UKF = unscented::UKF<State, Measurement>;
+
+UKF get_ukf(const State& initial_state_estimate, const double DT)
 {
-  // Initialize the UKF and set the weights
-  using UKF = unscented::UKF<State, Measurement>;
   UKF ukf;
   ukf.set_weight_coefficients(0.1, 2.0, -1.0);
-
-  // Simulation parameters
-  const auto DT = 1.0; // seconds
 
   UKF::N_by_N Q;
   Q.diagonal() << 1.0, 1.0, 1.0, 1.0, 1.0, 0.01, 0.01, 0.01, 0.01;
@@ -340,17 +309,24 @@ int main()
   R.diagonal() << 4.0, 4.0, 4.0, 1.0;
   ukf.set_measurement_covariance(R);
 
-  std::vector<Measurement> measurements = load_encounter();
-  auto& [x, y, z, U] = measurements[0].data;
-
-  // Set initial state estimate and its covariance
-  State initial_state_estimate({x.value, y.value, z.value, U.value, 0.0, 0.0},
-                               unscented::UnitQuaternion());
   ukf.set_state(initial_state_estimate);
   UKF::N_by_N P;
   P.diagonal() << 10.0, 10.0, 10.0, 1.0, 1.0, 0.1, 1.0, 1.0, 1.0;
   ukf.set_state_covariance(P);
 
+  return ukf;
+}
+
+int main()
+{
+  // Simulation parameters
+  const auto DT = 1.0; // seconds
+
+  State initial_state_estimate;
+  std::vector<Measurement> measurements =
+      load_encounter(initial_state_estimate);
+
+  auto ukf = get_ukf(initial_state_estimate, DT);
   double t = 0.0;
 
   for (auto& meas : measurements)
