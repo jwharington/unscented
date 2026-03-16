@@ -42,7 +42,7 @@ void UKF<STATE, MEAS>::predict(const SYS_MODEL& system_model, PARAMS... params)
   generate_sigma_points();
 
   // Copy filtered sigma points before propagation
-  SigmaPoints filtered_sigma_points = sigma_points_;
+  // SigmaPoints filtered_sigma_points = sigma_points_;
 
   // Transform each sigma point through the system model
   for (auto& sigma_point : sigma_points_)

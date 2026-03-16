@@ -10,16 +10,16 @@ namespace unscented
 ///////////////////////////////////////////////////////////////////////////////
 // Scalars
 ///////////////////////////////////////////////////////////////////////////////
-Scalar::Scalar(double r) : value(r)
+inline Scalar::Scalar(double r) : value(r)
 {
 }
 
-Scalar operator+(const Scalar& lhs, const Vector<Scalar::DOF>& vec)
+inline Scalar operator+(const Scalar& lhs, const Vector<Scalar::DOF>& vec)
 {
   return lhs.value + vec[0];
 }
 
-Vector<Scalar::DOF> operator-(const Scalar& lhs, const Scalar& rhs)
+inline Vector<Scalar::DOF> operator-(const Scalar& lhs, const Scalar& rhs)
 {
   return Vector<Scalar::DOF>{lhs.value - rhs.value};
 }
@@ -111,15 +111,15 @@ unscented::Vector<Compound<Ts...>::DOF> operator-(const Compound<Ts...>& lhs,
 ///////////////////////////////////////////////////////////////////////////////
 // Angle
 ///////////////////////////////////////////////////////////////////////////////
-Angle::Angle(const Vector<Angle::DOF>& vec) : Angle(vec[0])
+inline Angle::Angle(const Vector<Angle::DOF>& vec) : Angle(vec[0])
 {
 }
 
-Angle::Angle(double angle) : Angle(std::cos(angle), std::sin(angle))
+inline Angle::Angle(double angle) : Angle(std::cos(angle), std::sin(angle))
 {
 }
 
-Angle::Angle(double cos_angle, double sin_angle)
+inline Angle::Angle(double cos_angle, double sin_angle)
   : cos_angle_(cos_angle), sin_angle_(sin_angle)
 {
   static const double EPS = 1e-6;
@@ -132,22 +132,22 @@ Angle::Angle(double cos_angle, double sin_angle)
   }
 }
 
-double Angle::get_angle() const
+inline double Angle::get_angle() const
 {
   return std::atan2(sin_angle_, cos_angle_);
 }
 
-Vector<Angle::DOF> Angle::get_vector() const
+inline Vector<Angle::DOF> Angle::get_vector() const
 {
   return Vector<Angle::DOF>{get_angle()};
 }
 
-Angle operator+(const Angle& lhs, const Vector<Angle::DOF>& vec)
+inline Angle operator+(const Angle& lhs, const Vector<Angle::DOF>& vec)
 {
   return Angle(lhs.get_vector() + vec);
 }
 
-Vector<Angle::DOF> operator-(const Angle& lhs, const Angle& rhs)
+inline Vector<Angle::DOF> operator-(const Angle& lhs, const Angle& rhs)
 {
   return Angle(lhs.get_angle() - rhs.get_angle()).get_vector();
 }
@@ -181,19 +181,19 @@ inline Vector<UnitQuaternion::DOF> quaternion_log(const Eigen::Quaterniond& q)
 }
 } // namespace detail
 
-UnitQuaternion::UnitQuaternion(const Vector<UnitQuaternion::DOF>& vec)
+inline UnitQuaternion::UnitQuaternion(const Vector<UnitQuaternion::DOF>& vec)
   : q(detail::quaternion_exp(vec))
 {
 }
 
-UnitQuaternion operator+(const UnitQuaternion& lhs,
+inline UnitQuaternion operator+(const UnitQuaternion& lhs,
                          const Vector<UnitQuaternion::DOF>& vec)
 {
   const auto delta_q = detail::quaternion_exp(vec);
   return UnitQuaternion(delta_q * lhs.get_q());
 }
 
-Vector<UnitQuaternion::DOF> operator-(const UnitQuaternion& lhs,
+inline Vector<UnitQuaternion::DOF> operator-(const UnitQuaternion& lhs,
                                       const UnitQuaternion& rhs)
 {
   return detail::quaternion_log(lhs.get_q() * rhs.get_q().inverse());
