@@ -437,8 +437,10 @@ MANIFOLD calculate_mean_manifold(
     ++iteration_count;
   } while (mean_vec.norm() > EPS && iteration_count < MAX_ITERATIONS);
 
-  assert(iteration_count < MAX_ITERATIONS &&
-         "Calculating mean manifold did not converge");
+  if (iteration_count >= MAX_ITERATIONS)
+    throw std::runtime_error(
+        "Calculating mean manifold did not converge within the maximum number "
+        "of iterations");
 
   return reference_manifold;
 }
