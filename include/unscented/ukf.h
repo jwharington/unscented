@@ -110,6 +110,11 @@ public:
 
   void clear_history();
 
+  void set_max_smoothing_points(unsigned max_points)
+  {
+    max_smoothing_points = max_points;
+  }
+
 private:
   void calculate_weights();
 
@@ -150,6 +155,8 @@ private:
   double lambda_;
 
   double eta_;
+
+  unsigned max_smoothing_points = 0;
 
   Eigen::LLT<N_by_N> cholesky_;
 

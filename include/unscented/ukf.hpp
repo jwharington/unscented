@@ -349,8 +349,15 @@ void UKF<STATE, MEAS>::smooth()
 
   smoothed_states_ = filtered_states_;
   smoothed_covariances_ = filtered_covariances_;
+  int num_smoothing_points =
+      max_smoothing_points > 0
+          ? std::min(static_cast<int>(max_smoothing_points),
+                     static_cast<int>(filtered_states_.size() - 1))
+          : static_cast<int>(filtered_states_.size() - 1);
+  int start_index = static_cast<int>(filtered_states_.size()) - 2;
+  int end_index = std::max(start_index - num_smoothing_points, 0);
 
-  for (int k = static_cast<int>(filtered_states_.size()) - 2; k >= 0; --k)
+  for (int k = start_index; k >= end_index; --k)
   {
     const N_by_N& P_xy = smoothing_cross_covariances_[k];
     const N_by_N& P_pred_next = predicted_covariances_[k + 1];
