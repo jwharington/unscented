@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.14)
 project(unscented)
 
 # use C++17
-set(CMAKE_CXX_FLAGS "-std=c++17")
+set(CMAKE_CXX_FLAGS "-std=c++20")
 
 include(FetchContent)
 
@@ -32,7 +32,8 @@ target_compile_definitions(unscented INTERFACE
 set(INTERPROCEDURAL_OPTIMIZATION ON)
 find_package(Boost 1.75 REQUIRED COMPONENTS json)
 
-add_executable(glider_reconstruction examples/glider_reconstruction.cpp)
+# add_executable(glider_reconstruction examples/glider_reconstruction.cpp)
+add_executable(glider_reconstruction examples/FlightReconstruction.cpp examples/ReconstructionUtility.cpp)
 target_include_directories(glider_reconstruction PUBLIC /home/jmw/XCSoar/Tableau/include)
 target_link_libraries(glider_reconstruction PUBLIC unscented matplot Boost::json)
 

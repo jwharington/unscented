@@ -16,6 +16,7 @@ namespace json = boost::json;
 
 using Pos = unscented::Scalar;
 using Vel = unscented::Scalar;
+#define DEGTORAD (M_PI / 180.0)
 
 //////////////////////////////////////////////////////////////////////////////
 // Set up the state
@@ -152,7 +153,11 @@ const Eigen::Vector3d get_euler(const State& state)
   double theta = asin(-R(2, 0));
   double psi = acos(R(0, 0) / cos(theta)) * sign(R(1, 0));
   double phi = acos(R(2, 2) / cos(theta)) * sign(R(2, 1));
-  return Eigen::Vector3d(phi, theta, psi);
+  if (psi < 0)
+  {
+    psi += 2 * M_PI;
+  }
+  return Eigen::Vector3d(phi, theta, psi) / DEGTORAD;
   //  * 180.0f / M_PI;
 }
 
@@ -236,9 +241,9 @@ std::vector<Measurement> load_encounter(State& initial_state_estimate)
   std::vector<Measurement> measurements;
   try
   {
+    std::string filename = "/home/jmw/XCSoar/xcsoar/encounter_00008.json";
     // Read the file into a string
-    auto const json_data = read_file(
-        "/home/jmw/Desktop/Projects/FlightReconstruction/encounter_00000.json");
+    auto const json_data = read_file(filename.c_str());
 
     // Parse the JSON string into a value
     json::value jv = json::parse(json_data);
@@ -249,9 +254,9 @@ std::vector<Measurement> load_encounter(State& initial_state_estimate)
       if (count == 2)
       {
         auto& [x, y, z, U] = measurements[0].data;
-        const double hdg = line.at("hdg").as_double() * M_PI / 180.0;
-        const double pitch = line.at("pitch").as_double() * M_PI / 180.0;
-        const double bank = line.at("bank").as_double() * M_PI / 180.0;
+        const double hdg = line.at("hdg").as_double() * DEGTORAD;
+        const double pitch = line.at("pitch").as_double() * DEGTORAD;
+        const double bank = line.at("bank").as_double() * DEGTORAD;
         initial_state_estimate = get_initial_state_estimate(
             x.value, y.value, z.value, U.value, hdg, pitch, bank);
       }
@@ -262,7 +267,7 @@ std::vector<Measurement> load_encounter(State& initial_state_estimate)
         x.value = line.at("x").as_double();
         y.value = line.at("y").as_double();
         z.value = -line.at("alt_gps").as_double();
-        U.value = line.at("v_tas").as_double();
+        U.value = line.at("v_ias").as_double();
         measurements.push_back(measurement);
       }
       count++;
