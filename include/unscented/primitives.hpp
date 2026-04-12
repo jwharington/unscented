@@ -167,7 +167,11 @@ inline Eigen::Quaterniond quaternion_exp(const Vector<UnitQuaternion::DOF>& vec)
 
 inline Vector<UnitQuaternion::DOF> quaternion_log(const Eigen::Quaterniond& q)
 {
-  const Eigen::Quaterniond qq = q.normalized();
+  Eigen::Quaterniond qq = q.normalized();
+  if (qq.w() < 0.0)
+  {
+    qq.coeffs() *= -1.0;
+  }
   const double w = qq.w();
   const Eigen::Vector3d v(qq.x(), qq.y(), qq.z());
   const double v_norm = v.norm();
@@ -187,14 +191,14 @@ inline UnitQuaternion::UnitQuaternion(const Vector<UnitQuaternion::DOF>& vec)
 }
 
 inline UnitQuaternion operator+(const UnitQuaternion& lhs,
-                         const Vector<UnitQuaternion::DOF>& vec)
+                                const Vector<UnitQuaternion::DOF>& vec)
 {
   const auto delta_q = detail::quaternion_exp(vec);
   return UnitQuaternion(delta_q * lhs.get_q());
 }
 
 inline Vector<UnitQuaternion::DOF> operator-(const UnitQuaternion& lhs,
-                                      const UnitQuaternion& rhs)
+                                             const UnitQuaternion& rhs)
 {
   return detail::quaternion_log(lhs.get_q() * rhs.get_q().inverse());
 }

@@ -4,7 +4,9 @@
 #include "unscented/ukf.h"
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <numeric>
 
 namespace unscented
@@ -426,30 +428,85 @@ MANIFOLD calculate_mean_manifold(
     const std::array<MANIFOLD, ARRAY_SIZE>& manifolds,
     const std::array<double, ARRAY_SIZE>& weights)
 {
-  static const int MAX_ITERATIONS = 10000;
+  static const int MAX_ITERATIONS = 300;
   static const double EPS = 1e-6;
+  static const double MIN_STEP_SCALE = 1.0 / 1024.0;
+  static const double MAX_STEP_NORM = 0.5;
 
   auto reference_manifold = manifolds[0];
-  Eigen::Matrix<double, MANIFOLD::DOF, 1> mean_vec;
-  int iteration_count = 0;
+  Eigen::Matrix<double, MANIFOLD::DOF, 1> mean_vec =
+      Eigen::Matrix<double, MANIFOLD::DOF, 1>::Zero();
 
-  do
+  auto residual_norm = [&](const MANIFOLD& reference)
   {
-    mean_vec = Eigen::Matrix<double, MANIFOLD::DOF, 1>::Zero();
+    Eigen::Matrix<double, MANIFOLD::DOF, 1> residual =
+        Eigen::Matrix<double, MANIFOLD::DOF, 1>::Zero();
     for (std::size_t i = 0; i < ARRAY_SIZE; ++i)
     {
-      mean_vec += weights[i] * (manifolds[i] - reference_manifold);
+      residual += weights[i] * (manifolds[i] - reference);
     }
-    reference_manifold = reference_manifold + mean_vec;
+    return std::pair<Eigen::Matrix<double, MANIFOLD::DOF, 1>, double>{
+        residual, residual.norm()};
+  };
+
+  int iteration_count = 0;
+  double norm_prev = std::numeric_limits<double>::infinity();
+
+  while (iteration_count < MAX_ITERATIONS)
+  {
+    auto [residual, norm_current] = residual_norm(reference_manifold);
+    mean_vec = residual;
+
+    if (!std::isfinite(norm_current))
+    {
+      throw std::runtime_error(
+          "Calculating mean manifold diverged (non-finite norm)");
+    }
+
+    if (norm_current <= EPS)
+    {
+      return reference_manifold;
+    }
+
+    if (norm_current > MAX_STEP_NORM)
+    {
+      mean_vec *= (MAX_STEP_NORM / norm_current);
+    }
+
+    double step_scale = 1.0;
+    bool accepted = false;
+    while (step_scale >= MIN_STEP_SCALE)
+    {
+      const auto candidate = reference_manifold + step_scale * mean_vec;
+      const auto [_, candidate_norm] = residual_norm(candidate);
+      if (candidate_norm < norm_current)
+      {
+        reference_manifold = candidate;
+        norm_prev = candidate_norm;
+        accepted = true;
+        break;
+      }
+
+      step_scale *= 0.5;
+    }
+
+    if (!accepted)
+    {
+      if (norm_current < 1e-4 || std::abs(norm_prev - norm_current) < 1e-8)
+      {
+        return reference_manifold;
+      }
+
+      throw std::runtime_error(
+          "Calculating mean manifold stalled (unable to reduce residual)");
+    }
+
     ++iteration_count;
-  } while (mean_vec.norm() > EPS && iteration_count < MAX_ITERATIONS);
+  }
 
-  if (iteration_count >= MAX_ITERATIONS)
-    throw std::runtime_error(
-        "Calculating mean manifold did not converge within the maximum number "
-        "of iterations");
-
-  return reference_manifold;
+  throw std::runtime_error(
+      "Calculating mean manifold did not converge within the maximum number "
+      "of iterations");
 }
 } // namespace unscented
 
