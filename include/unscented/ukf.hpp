@@ -120,7 +120,13 @@ void UKF<STATE, MEAS>::correct(const MEAS_MODEL& meas_model, PARAMS... params)
   }
 
   // Calculate the Kalman gain and innovation
-  K_ = Pxy_ * Pyy_.inverse();
+  {
+    Eigen::LLT<M_by_M> llt(Pyy_);
+    if (llt.info() == Eigen::Success)
+      K_ = llt.solve(Pxy_.transpose()).transpose();
+    else
+      K_ = N_by_M::Zero();
+  }
   innovation_ = y_ - y_hat_;
 
   // Update the state covariance (temporary)
@@ -160,6 +166,12 @@ void UKF<STATE, MEAS>::generate_sigma_points(
   // Calculate the (weighted) matrix square root of the state covariance
   // matrix
   cholesky_.compute(P_);
+  if (cholesky_.info() != Eigen::Success)
+  {
+    // Covariance is not positive-definite; reset to a safe diagonal
+    P_ = Q_;
+    cholesky_.compute(P_);
+  }
   const N_by_N& sqrt_P = eta_ * cholesky_.matrixL().toDenseMatrix();
 
   // First sigma point is the perturbed state mean
@@ -363,7 +375,12 @@ void UKF<STATE, MEAS>::smooth()
   {
     const N_by_N& P_xy = smoothing_cross_covariances_[k];
     const N_by_N& P_pred_next = predicted_covariances_[k + 1];
-    N_by_N C = P_xy * P_pred_next.inverse(); // D_k
+    Eigen::LLT<N_by_N> llt(P_pred_next);
+    N_by_N C;
+    if (llt.info() == Eigen::Success)
+      C = llt.solve(P_xy.transpose()).transpose();
+    else
+      C = N_by_N::Zero();
 
     // mks
     smoothed_states_[k] = filtered_states_[k] + C * (smoothed_states_[k + 1] -
